@@ -21,7 +21,7 @@
       <ul class="pagination" v-if="pagination.show">
         <li :class="pagination.pre" @click="prePage">&laquo;</li>
         <li v-for="(item, index) in pagination.arr" :key="index"
-        :class="currentPage==item?'current':''">{{item}}</li>
+        :class="currentPage==item?'current':''" @click="changePage(item)">{{item}}</li>
         <li :class="pagination.next" @click="nextPage">&raquo;</li>
       </ul>
     </div>
@@ -29,7 +29,6 @@
 </template>
 
 <script>
-import Request from '@/utils/request.js'
 export default {
   data () {
     return {
@@ -52,53 +51,50 @@ export default {
       wx.showLoading({
         title: '加载中'
       })
-      let url = 'https://www.ultimate-guitar.com/search.php?title=' + this.search + '&page=' + this.currentPage + '&type=300'
-      let request = new Request()
-      request.get(url).then(res => {
-        let data = res.data.replace(/&nbsp;/g, ' ')
-        let test = data.match(/<article[\s\S]+<\/article>/g)[0]
-        let arr = test.split('<article class="clearfix ugm-list--link js-tapped js-bottom-sheet-target" ' || '</article>')
-        arr.shift()
-        arr = arr.filter(item => {
-          if (item.match(/CRD(?=\s*<)/)) {
-            return true
-          }
-        })
-        arr.forEach(item => {
+      // 调用云函数请求数据
+      wx.cloud.callFunction({
+        name: 'getList',
+        data: {
+          search: this.search,
+          currentPage: this.currentPage
+        }
+      }).then(res => {
+        console.log('调用了云函数')
+        console.log(res.result)
+        let dataList = res.result.results.filter(item => item.artist_id)
+        // console.log(dataList)
+        dataList.forEach(item => {
           let data = {}
-          data.song = item.match(/(?<=link-song">)[\w\s()]+(?=<\/a>)/) || item.match(/(?<=link-song">\s*)[\w\s()<>/.'&-]+<\/b>[\s\w().'&-]*(?=\s*<\/a>)/)
-          if (data.song) data.song = data.song[0].replace(/<b>|<\/b>/g, '')
-          data.artist = item.match(/(?<="\s*>\n)[\w\s()/<>.'&-]+(?=<\/a>\s*<\/footer>)/)
-          if (data.artist) data.artist = data.artist[0].replace(/<b>|<\/b>/g, '')
-          data.link = item.match(/"https:[\w/\-.]+"/)[0].replace('https://tabs.ultimate-guitar.com/tab', '').replace(/"/g, '')
-          data.hot = item.match(/(?<=text-left">)\d+(?=<\/span>)/)
+          data.song = item.song_name
+          data.artist = item.artist_name
+          data.link = item.tab_url
+          data.hot = item.votes
           list.push(data)
         })
         this.list = list
-        // let artist = arr[0].match(/(?<="\s*>\n)[\w\s/<>]+(?=<\/a>\s*<\/footer>)/)[0].replace(/<b>|<\/b>/g, '')
-        // 获取分页数据
-        let myPagination = data.match(/(?<=<ul class="pagination">)[\s\S]+(?=<\/ul>)/)
-        // 判断是否需要分页，数据太少时无需分页
-        if (myPagination) {
-          myPagination = myPagination[0].split('<li' || '</li>')
-          myPagination.shift()
-          this.pagination.pre = ''
-          this.pagination.next = ''
-          if (myPagination[0].match(/disabled/)) this.pagination.pre = 'disabled'
-          if (myPagination[myPagination.length - 1].match(/disabled/)) this.pagination.next = 'disabled'
-          let pgiArr = []
-          for (let i = 1; i < myPagination.length - 1; i++) {
-            let page = myPagination[i].match(/(?<=>)\d+(?=<)/)[0]
-            pgiArr.push(page)
-          }
-          this.pagination.arr = pgiArr
+        // 获取分页
+        let total = res.result.pagination.total
+        if (total > 1) {
           this.pagination.show = true
+          let arr = []
+          let i
+          switch (this.currentPage) {
+            case 1 || 2:
+              i = 1
+              break
+            case total || (total - 1):
+              i = Math.max(1, total - 4)
+              break
+            default:
+              i = Math.max(1, this.currentPage - 2)
+          }
+          let maxPage = Math.min(i + 4, total)
+          for (i; i <= maxPage; i++) {
+            arr.push(i)
+          }
+          this.pagination.arr = arr
         }
         wx.hideLoading()
-        wx.pageScrollTo({
-          scrollTop: 0,
-          duration: 0
-        })
       }).catch(err => {
         console.log(err)
         wx.hideLoading()
@@ -109,27 +105,34 @@ export default {
         })
       })
     },
+    changePage (newPage) {
+      if (newPage !== this.currentPage) {
+        this.currentPage = newPage
+        this.searchList()
+        this.goTop()
+      }
+    },
     prePage () {
       if (this.pagination.pre !== 'disabled') {
         this.currentPage -= 1
         this.searchList()
-        wx.pageScrollTo({
-          scrollTop: 0,
-          duration: 0
-        })
-        this.showSearch = true
+        this.goTop()
       }
     },
     nextPage () {
       if (this.pagination.next !== 'disabled') {
         this.currentPage += 1
         this.searchList()
-        wx.pageScrollTo({
-          scrollTop: 0,
-          duration: 0
-        })
-        this.showSearch = true
+        this.goTop()
       }
+    },
+    // 页面回到顶部
+    goTop () {
+      wx.pageScrollTo({
+        scrollTop: 0,
+        duration: 0
+      })
+      this.showSearch = true
     },
     touchStart (e) {
       this.touch.before = e.clientY
@@ -145,13 +148,7 @@ export default {
       }
     }
   },
-  created () {
-    wx.showLoading({
-      title: '加载中'
-    })
-  },
   mounted () {
-    wx.hideLoading()
     this.search = this.$root.$mp.query.search
     if (this.search) {
       this.searchList()

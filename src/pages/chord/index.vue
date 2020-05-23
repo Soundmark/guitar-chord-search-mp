@@ -15,7 +15,7 @@
 </template>
 
 <script>
-import Request from '@/utils/request.js'
+// import Request from '@/utils/request.js'
 export default {
   data () {
     return {
@@ -30,18 +30,22 @@ export default {
     wx.showLoading({
       title: '加载中'
     })
-    let link = this.$root.$mp.query.link
-    let url = 'https://tabs.ultimate-guitar.com/tab' + link
-    let request = new Request()
-    request.get(url).then(res => {
-      let data = res.data.match(/(?<=data-content=")[\s\S]+(?="><\/div>)/)[0].replace(/&quot;/g, '"')
-      data = JSON.parse(data)
-      this.capo = res.data.match(/(?<=<span class="text-muted">Capo:<\/span>)[\w\s]+/)
-      let store = data.store.tab
-      this.artist = store.artist_name
-      this.song = store.song_name
-      this.content = store.content.replace(/\[ch\]/g, '<b style="background-color:#a4a4a4;">').replace(/\[\/ch\]/g, '</b>').replace(/\[tab\]/g, '<div>').replace(/\[\/tab\]/g, '</div>')
-      this.content = '<pre style="font:微软雅黑;">' + this.content + '</pre>'
+    let url = this.$root.$mp.query.link
+    wx.cloud.callFunction({
+      name: 'getChord',
+      data: {
+        url
+      }
+    }).then(res => {
+      // console.log(res.result)
+      let chord = res.result.tab_view.wiki_tab.content
+      chord = chord.replace(/\[ch\]/g, '<b style="background-color:#a4a4a4;">').replace(/\[\/ch\]/g, '</b>').replace(/\[tab\]/g, '<div>').replace(/\[\/tab\]/g, '</div>')
+      this.content = '<pre style="font:微软雅黑;">' + chord + '</pre>'
+      this.artist = res.result.tab.artist_name
+      this.song = res.result.tab.song_name
+      if (res.result.tab_view.meta.capo) {
+        this.capo = res.result.tab_view.meta.capo + 'st fret'
+      }
       this.showTitle = true
       wx.hideLoading()
     }).catch(err => {

@@ -17,7 +17,7 @@ var fileExtConfig = {
         template: 'wxml',
         script: 'js',
         style: 'wxss',
-        platform: 'wx'
+        platform: 'miniprogram'
     },
     my: {
         template: 'axml',
